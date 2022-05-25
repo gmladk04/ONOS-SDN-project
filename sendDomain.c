@@ -24,6 +24,10 @@
 #include <sys/eventfd.h>
 #include "sys/types.h"
 
+#include <memory>
+#include <stdexcept>
+#include <string>
+
 #ifdef MRP_CPPUTEST
 size_t mrpd_send(SOCKET sockfd, const void* buf, size_t len, int flags);
 #else
@@ -75,12 +79,24 @@ struct mrpdu {
 	unsigned short endMark;
 };
 
+
+template<typename ... Args>
+std::string string_format( const std::string& format, Args ... args )
+{
+    int size_s = std::snprintf( nullptr, 0, format.c_str(), args ... ) + 1; // Extra space for '\0'
+    if( size_s <= 0 ){ throw std::runtime_error( "Error during formatting." ); }
+    auto size = static_cast<size_t>( size_s );
+    std::unique_ptr<char[]> buf( new char[ size ] );
+    std::snprintf( buf.get(), size, format.c_str(), args ... );
+    return std::string( buf.get(), buf.get() + size - 1 ); // We don't want the '\0' inside
+}
+
 int msrp_sock;
 char* interface;
 
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock, unsigned char* multicast_addr);
 void sendMsrp(struct message* msg);
-struct mrpdu* processMsrp(unsigned char* data);
+void processMsrp(unsigned char* data);
 
 unsigned char* parseEtherAddress(unsigned char* data) {
 	unsigned char* ethAddr = (unsigned char*)malloc(6);
@@ -448,8 +464,6 @@ unsigned char* serialize(struct vector_attribute* va, int type, unsigned int* se
 		*buf = dfv->priority;
 		buf += 1;
 
-		*((unsigned short*)buf) = htons(dfv->vlan_id);
-		buf += 2;
 
 		for (vector_encoded = 0, three = 0, i = 0; i < numofval; i++) {
 			if (three == 0) {
@@ -459,6 +473,8 @@ unsigned char* serialize(struct vector_attribute* va, int type, unsigned int* se
 			if (three == 1) {
 				vector_encoded += va->vec.three_events[i] * 6;
 			}
+		*((unsigned short*)buf) = htons(dfv->vlan_id);
+		buf += 2;
 			if (three == 2) {
 				vector_encoded += va->vec.three_events[i];
 				*buf = vector_encoded;
@@ -480,28 +496,6 @@ unsigned char* serialize(struct vector_attribute* va, int type, unsigned int* se
 	return NULL;
 }
 
-struct message* buildDomainMsg(unsigned char classId, unsigned char priority, unsigned short vlan_id, unsigned char* event) {
-	unsigned char* ethAddr1, * ethAddr2;
-	struct message* msg = (struct message*)malloc(sizeof(struct message));
-	struct DomainFirstValue* dfv = (struct DomainFirstValue*)malloc(sizeof(struct DomainFirstValue));
-
-	dfv->classId = classId;
-	dfv->priority = priority;
-	dfv->vlan_id = vlan_id;
-
-	msg->attrType = 4;
-	msg->attributeLength = DOMAIN_ATTR_LENGTH;
-	msg->va.vh = ((0 << 13) + 1);
-	msg->va.firstValue = (unsigned int)dfv;
-	msg->va.next = NULL;
-	msg->va.vec.three_events = event;
-	msg->va.vec.allocated = 1;
-	msg->endMark = 0;
-	msg->next = NULL;
-
-	return msg;
-}
-
 
 
 int main(int argc, char* argv[]) {
@@ -513,23 +507,14 @@ int main(int argc, char* argv[]) {
 	unsigned char classId;
 	unsigned char priority;
 	unsigned short vlan_id;
+	unsigned char test[] = {0x03,0x00,0x80,0x07,0x7c,0x03,0x00,0x79,0x3f,0x11,0x03,0x11,0x01,0x64,0x06,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x07,0x05,0x04,0x4a,0x4d,0x43,0x52,0x01,0xef,0xff,0xff,0xfe,0x08,0x01,0x0b,0xac,0x9e,0x0c,0x01,0x02,0x0c,0x04,0x06,0xa4,0x00,0x00,0x15,0x01,0x02,0x07,0x08,0x12,0x34,0x0d,0xb8,0xf0,0x0d,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0xfe,0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x02,0x00,0x00,0xff,0xfe,0x00,0x00,0x08,0x10,0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x08,0x08,0x00,0x00,0x01,0x00,0x01,0x01,0x0e,0x06,0x00,0x00,0x00,0x00,0x00,0x08};
+
 	interface = strdup(argv[1]);
-	classId = atoi(argv[2]);
-	priority = atoi(argv[3]);
-	vlan_id = atoi(argv[4]);
-	vectors[0] = atoi(argv[5]);
-	mrpd_init_protocol_socket(0x22EA, &msrp_sock, MSRP_ADDR);
 
+	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
 
-	msg = buildDomainMsg(classId, priority, vlan_id, vectors);
-	sendMsrp(msg);
-	free(msg);
-
-	received = recv(msrp_sock, buffer, 1500, 0);
-	printf("MSRP Received\n");
-	mrp_frame = processMsrp(buffer + 14);
-
-	free(mrp_frame);
+	// received = recv(msrp_sock, buffer, 1500, 0);
+	processMsrp(test);
 
 	close(msrp_sock);
 	return 0;
@@ -597,328 +582,92 @@ void sendMsrp(struct message* msg) {
 	free(msgbuf);
 }
 
-struct mrpdu* processMsrp(unsigned char* data) {
+void processMsrp(unsigned char* data) {
 	unsigned char* ptr;
-	struct message* msg;
-	struct talkerAdvertiseFirstValue* tafv;
-	struct talkerFailedFirstValue* tffv;
-	struct ListenerDeclarationFirstValue* ldfv;
-	struct DomainFirstValue* dfv;
-	unsigned int numofval;
-	unsigned int vector_bytes;
-	struct mrpdu* mrp_frame = (struct mrpdu*)malloc(sizeof(struct mrpdu));
+	unsigned char channel_number;
+	unsigned char ipv6_prefix[16];
+	unsigned char prefix_length;
+	unsigned char default_gw[16];
+	unsigned char primary_dns[16];
+	unsigned char mac_address[6];
+
+	unsigned char string_prefix[256];
 
 	ptr = data;
 
-	if (*ptr != 0) {
-		printf("Error - ProtocolVersion is Not 0\n");
-		return NULL;
-	}
-	mrp_frame->protocolVersion = *ptr;
-	ptr += 1;
+	ptr += 53;
+	
+	// Channel Info start
+	ptr++;
 
-	msg = (struct message*)ptr;
+	channel_number = *ptr;
+	ptr++;
 
-	mrp_frame->msg.attrType = msg->attrType;
-	mrp_frame->msg.attributeLength = msg->attributeLength;
-	mrp_frame->msg.attributeListLength = htons(msg->attributeListLength);
+	printf("Channel Number : %d\n", channel_number);
 
-	ptr += 4;
-
-	switch (msg->attrType) {
-	case 1:
-
-		if (msg->attributeLength != TALKER_ADVERTISE_ATTR_LENGTH) {
-			printf("Error - Wrong Attribute Length\n");
-			free(mrp_frame);
-			return NULL;
-		}
-		mrp_frame->msg.va.vh = htons(*((unsigned short*)ptr));
-		numofval = (mrp_frame->msg.va.vh & 0x1FFF);
-		if (numofval == 0) {
-			printf("Error - Number of Values is 0\n");
-			free(mrp_frame);
-			return NULL;
-		}
-		vector_bytes = (numofval + 2) / 3;
-
-
-		ptr += 2;
-
-		tafv = (struct talkerAdvertiseFirstValue*)malloc(sizeof(struct talkerAdvertiseFirstValue));
-		mrp_frame->msg.va.firstValue = (unsigned int)tafv;
-
-		memcpy(tafv->sid.ethAddr, ptr, 6);
-		ptr += 6;
-
-		tafv->sid.unique_id = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		memcpy(tafv->dfp.dstAddr, ptr, 6);
-		ptr += 6;
-
-		tafv->dfp.vlan_id = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		tafv->ts.max_frame_size = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		tafv->ts.max_interval = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		tafv->par = *ptr;
-		ptr += 1;
-
-		tafv->accumulated_latency = htonl(*((unsigned int*)ptr));
-		ptr += 4;
-
-		{
-			int i, j;
-			unsigned char value;
-			unsigned char* vectors = (unsigned char*)malloc(vector_bytes);
-			for (j = 0, i = 0; i < numofval; i++, j = (j + 1) % 3) {
-				if (j == 0) {
-					value = (*ptr) & 0xFF;
-					ptr++;
-					vectors[i] = (value / 36);
-					value = value % 36;
-				}
-				if (j == 1) {
-					vectors[i] = (value / 6);
-					value = value % 6;
-				}
-				if (j == 2) {
-					vectors[i] = value;
-				}
-			}
-			mrp_frame->msg.va.vec.three_events = vectors;
-			mrp_frame->msg.va.vec.allocated = numofval;
-		}
-		break;
-	case 2:
-		if (msg->attributeLength != TALKER_FAILED_ATTR_LENGTH) {
-			printf("Error - Wrong Attribute Length\n");
-			free(mrp_frame);
-			return NULL;
-		}
-		mrp_frame->msg.va.vh = htons(*((unsigned short*)ptr));
-		numofval = (mrp_frame->msg.va.vh & 0x1FFF);
-		if (numofval == 0) {
-			printf("Error - Number of Values is 0\n");
-			free(mrp_frame);
-			return NULL;
-		}
-		vector_bytes = (numofval + 2) / 3;
-
-
-		ptr += 2;
-
-		tffv = (struct talkerFailedFirstValue*)malloc(sizeof(struct talkerFailedFirstValue));
-		mrp_frame->msg.va.firstValue = (unsigned int)tffv;
-
-		memcpy(tffv->sid.ethAddr, ptr, 6);
-		ptr += 6;
-
-		tffv->sid.unique_id = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		memcpy(tffv->dfp.dstAddr, ptr, 6);
-		ptr += 6;
-
-		tffv->dfp.vlan_id = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		tffv->ts.max_frame_size = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		tffv->ts.max_interval = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		tffv->par = *ptr;
-		ptr += 1;
-
-		tffv->accumulated_latency = htonl(*((unsigned int*)ptr));
-		ptr += 4;
-
-		memcpy(tffv->f_info.system_id, ptr, 8);
-		ptr += 8;
-
-		tffv->f_info.f_code = *ptr;
-		ptr += 1;
-
-		{
-			int i, j;
-			unsigned char value;
-			unsigned char* vectors = (unsigned char*)malloc(vector_bytes);
-			for (j = 0, i = 0; i < numofval; i++, j = (j + 1) % 3) {
-				if (j == 0) {
-					value = (*ptr) & 0xFF;
-					ptr++;
-					vectors[i] = (value / 36);
-					value = value % 36;
-				}
-				if (j == 1) {
-					vectors[i] = (value / 6);
-					value = value % 6;
-				}
-				if (j == 2) {
-					vectors[i] = value;
-				}
-			}
-			mrp_frame->msg.va.vec.three_events = vectors;
-			mrp_frame->msg.va.vec.allocated = numofval;
-		}
-
-		break;
-	case 3:
-		if (msg->attributeLength != LISTENER_DECLARATION_ATTR_LENGTH) {
-			printf("Error - Wrong Attribute Length\n");
-			free(mrp_frame);
-			return NULL;
-		}
-		mrp_frame->msg.va.vh = htons(*((unsigned short*)ptr));
-		numofval = (mrp_frame->msg.va.vh & 0x1FFF);
-		if (numofval == 0) {
-			printf("Error - Number of Values is 0\n");
-			free(mrp_frame);
-			return NULL;
-		}
-		vector_bytes = ((numofval + 2) / 3) + ((numofval + 3) / 4);
-
-
-		ptr += 2;
-
-		ldfv = (struct ListenerDeclarationFirstValue*)malloc(sizeof(struct ListenerDeclarationFirstValue));
-		mrp_frame->msg.va.firstValue = (unsigned int)ldfv;
-
-		memcpy(ldfv->sid.ethAddr, ptr, 6);
-		ptr += 6;
-
-		ldfv->sid.unique_id = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		{
-			int i, j;
-			unsigned char value;
-			unsigned char* vectors = (unsigned char*)malloc(vector_bytes);
-			for (j = 0, i = 0; i < numofval; i++, j = (j + 1) % 3) {
-				if (j == 0) {
-					value = (*ptr) & 0xFF;
-					ptr++;
-					vectors[i] = (value / 36);
-					value = value % 36;
-				}
-				if (j == 1) {
-					vectors[i] = (value / 6);
-					value = value % 6;
-				}
-				if (j == 2) {
-					vectors[i] = value;
-				}
-			}
-			mrp_frame->msg.va.vec.three_events = vectors;
-			mrp_frame->msg.va.vec.allocated = numofval;
-		}
-
-		{
-			int i, j;
-			unsigned char value;
-			unsigned char* vectors = (unsigned char*)malloc(vector_bytes);
-			for (j = 0, i = 0; i < numofval; i++, j = (j + 1) % 4) {
-				if (j == 0) {
-					value = (*ptr) & 0xFF;
-					ptr++;
-					vectors[i] = value >> 6;
-					value = value & 0x3F;
-				}
-				if (j == 1) {
-					vectors[i] = value >> 4;
-					value = value & 0xF;
-				}
-				if (j == 2) {
-					vectors[i] = value >> 2;
-					value = value & 0x3;
-				}
-				if (j == 3) {
-					vectors[i] = value;
-				}
-			}
-			mrp_frame->msg.va.vec.four_events = vectors;
-		}
-
-		break;
-	case 4:
-
-		if (msg->attributeLength != DOMAIN_ATTR_LENGTH) {
-			printf("Error - Wrong Attribute Length\n");
-			free(mrp_frame);
-			return NULL;
-		}
-		mrp_frame->msg.va.vh = htons(*((unsigned short*)ptr));
-		numofval = (mrp_frame->msg.va.vh & 0x1FFF);
-		if (numofval == 0) {
-			printf("Error - Number of Values is 0\n");
-			free(mrp_frame);
-			return NULL;
-		}
-		vector_bytes = (numofval + 2) / 3;
-
-
-		ptr += 2;
-
-		dfv = (struct DomainFirstValue*)malloc(sizeof(struct DomainFirstValue));
-		mrp_frame->msg.va.firstValue = (unsigned int)dfv;
-
-		dfv->classId = *ptr;
-		ptr += 1;
-
-		dfv->priority = *ptr;
-		ptr += 1;
-
-		dfv->vlan_id = htons(*((unsigned short*)ptr));
-		ptr += 2;
-
-		{
-			int i, j;
-			unsigned char value;
-			unsigned char* vectors = (unsigned char*)malloc(vector_bytes);
-			for (j = 0, i = 0; i < numofval; i++, j = (j + 1) % 3) {
-				if (j == 0) {
-					value = (*ptr) & 0xFF;
-					ptr++;
-					vectors[i] = (value / 36);
-					value = value % 36;
-				}
-				if (j == 1) {
-					vectors[i] = (value / 6);
-					value = value % 6;
-				}
-				if (j == 2) {
-					vectors[i] = value;
-				}
-			}
-			mrp_frame->msg.va.vec.three_events = vectors;
-			mrp_frame->msg.va.vec.allocated = numofval;
-		}
-		break;
-	default:
-		printf("Error - Wrong Attribute Type\n");
-		free(mrp_frame);
-		return NULL;
+	ptr += 16;
+	
+	for(int i = 0; i < 16; i++) {
+		ipv6_prefix[i] = *ptr;
+		ptr++;
 	}
 
-	if (*((unsigned int*)ptr) != 0) {
-		printf("Wrong EndMark\n");
-		free(mrp_frame->msg.va.vec.three_events);
-		if (mrp_frame->msg.attrType == 3) {
-			free(mrp_frame->msg.va.vec.four_events);
-		}
-		free((void*)(mrp_frame->msg.va.firstValue));
-		free(mrp_frame);
-		return NULL;
-	}
+	printf("IPv6 Prefix : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", ipv6_prefix[0], ipv6_prefix[1], ipv6_prefix[2], ipv6_prefix[3], ipv6_prefix[4], ipv6_prefix[5], ipv6_prefix[6], ipv6_prefix[7], ipv6_prefix[8], ipv6_prefix[9], ipv6_prefix[10], ipv6_prefix[11], ipv6_prefix[12], ipv6_prefix[13], ipv6_prefix[14], ipv6_prefix[15]);
 
-	return mrp_frame;
+	prefix_length = *ptr;
+	ptr++;
+
+	printf("Prefix Length : %d\n", prefix_length);
+
+	
+	for(int i = 0; i < 16; i++) {
+		default_gw[i] = *ptr;
+		ptr++;
+	}//default gateway
+	
+	printf("Default gateway : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], ipv6_prefix[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
+
+	std::string default_gw_string = string_format("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], ipv6_prefix[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
+
+	std::string str = "ip -6 route add default via ";
+	str = str + default_gw_string;
+
+	std::string dev = " dev ";
+	std::string interface_str (interface);
+	str = str + dev;
+	str = str + interface_str;
+	
+	system(str.c_str());
+
+
+	
+	for(int i = 0; i < 16; i++) {
+		primary_dns[i] = *ptr;
+		ptr++;
+	}//dns
+	printf("primary_dns : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", primary_dns[0], primary_dns[1], primary_dns[2], primary_dns[3], primary_dns[4], primary_dns[5], primary_dns[6], primary_dns[7], primary_dns[8], primary_dns[9], primary_dns[10], primary_dns[11], primary_dns[12], primary_dns[13], primary_dns[14], primary_dns[15]);
+
+	ptr += 3;
+	
+	
+	for(int i = 0; i < 6; i++) {
+		mac_address[i] = *ptr;
+		ptr++;
+	}//mac_address
+	printf("mac_address : %02x:%02x:%02x:%02x:%02x:%02x\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
+
+	std::string default_gw_mac_string = string_format("%02x:%02x:%02x:%02x:%02x:%02x", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
+// ip -6 neigh add <IPv6 address> lladdr <link-layer address> dev <device>
+	std::string str_neigh = "ip -6 neigh add ";
+	str_neigh = str_neigh + default_gw_string;
+
+	std::string str_lladdr = " lladdr ";
+	str_neigh = str_neigh + str_lladdr;
+	str_neigh = str_neigh + default_gw_mac_string;
+	str_neigh = str_neigh + dev;
+	str_neigh = str_neigh + interface_str;
+
+	system(str_neigh.c_str());
 }
 
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock,
