@@ -79,6 +79,21 @@ struct mrpdu {
 	unsigned short endMark;
 };
 
+struct ipv6_header {
+	unsigned int ver_tc_flow_label;
+	unsigned short payload_length;
+	unsigned char nh;
+	unsigned char hop_limit;
+	unsigned char destaddr[16];
+	unsigned char sourceaddr[16];
+};
+
+struct udp_header {
+	unsigned char sourceport[16];
+	unsigned char destinationport[16]
+	unsigned short udp_length;
+	unsigned short udp_checksum;
+};
 
 template<typename ... Args>
 std::string string_format( const std::string& format, Args ... args )
@@ -92,6 +107,8 @@ std::string string_format( const std::string& format, Args ... args )
 }
 
 int msrp_sock;
+int udp_sock;
+
 char* interface;
 
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock, unsigned char* multicast_addr);
@@ -512,6 +529,7 @@ int main(int argc, char* argv[]) {
 	interface = strdup(argv[1]);
 
 	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
+	mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
 
 	// received = recv(msrp_sock, buffer, 1500, 0);
 	processMsrp(test);
