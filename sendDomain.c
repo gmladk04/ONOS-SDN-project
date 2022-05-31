@@ -89,8 +89,8 @@ struct ipv6_header {
 };
 
 struct udp_header {
-	unsigned char sourceport[16];
-	unsigned char destinationport[16]
+	unsigned short sourceport;
+	unsigned short destinationport;
 	unsigned short udp_length;
 	unsigned short udp_checksum;
 };
