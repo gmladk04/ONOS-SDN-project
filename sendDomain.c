@@ -41,7 +41,7 @@ size_t mrpd_send(SOCKET sockfd, const void* buf, size_t len, int flags);
 #define LISTENER_DECLARATION_ATTR_LENGTH 8
 #define DOMAIN_ATTR_LENGTH 4
 
-unsigned char MSRP_ADDR[] = { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E };
+unsigned char MSRP_ADDR[] = { 0x08, 0x00, 0x27, 0x00, 0x00, 0x0E };
 unsigned char STATION_ADDR[] = { 0x32, 0xd8, 0xb9, 0xc0, 0x84, 0xfd };
 
 struct eth_header {
@@ -95,6 +95,17 @@ struct udp_header {
 	unsigned short udp_checksum;
 };
 
+struct udp_ns_header {
+	unsigned char type;
+	unsigned char code;
+	unsigned short checksum;
+	unsigned int reserved;
+	unsigned char target_address[16];
+	unsigned char op_type;
+	unsigned char op_length;
+	unsigned char lladdr[6];	
+};
+
 template<typename ... Args>
 std::string string_format( const std::string& format, Args ... args )
 {
@@ -110,6 +121,77 @@ int msrp_sock;
 int udp_sock;
 
 char* interface;
+
+
+char target_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
+char src_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
+char dst_addr[16]={ 0x12, 0x34, 0x12, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
+char lladdr[6]={0x12, 0x12, 0x12,0x12, 0x12, 0x12};
+
+void forge_udp_ns() {
+	char buf[1500];
+	char * buf_ptr;
+	unsigned int data_len;
+
+	struct udp_ns_header unh;
+	struct udp_header uh;
+	struct ipv6_header ih;
+	struct eth_header eh;
+
+	buf_ptr = buf + 1500;
+
+	buf_ptr -= sizeof(unh);
+	data_len += sizeof(unh);
+	
+	unh.type=135;
+	unh.code =0;
+	unh.checksum=htons(0);
+	unh.reserved=htons(0);
+	memcpy(unh.target_address, target_addr ,16);
+	unh.op_type=1;
+	unh.op_length=1;
+	memcpy(unh.lladdr, lladdr,6);
+	
+	memcpy(buf_ptr, (char *)&unh, sizeof(unh));
+
+	uh.sourceport = htons(12345);
+	uh.destinationport = htons(12345);
+	uh.udp_length = htons(10);
+	uh.udp_checksum = htons(0);
+
+	buf_ptr -= sizeof(uh);
+	data_len += sizeof(uh);
+	memcpy(buf_ptr, (char *)&uh, sizeof(uh));
+
+	ih.ver_tc_flow_label=0;
+	ih.payload_length=htons(10);
+	ih.hop_limit=64;
+	ih.nh=17;
+	memcpy(ih.sourceaddr, src_addr ,16);
+	memcpy(ih.destaddr, dst_addr ,16);
+
+	
+	buf_ptr -= sizeof(ih);
+	data_len += sizeof(ih);
+	memcpy(buf_ptr, (char *)&ih, sizeof(ih));
+
+	eh.etherType = htons(0x86dd);
+	memcpy(eh.srcaddr, STATION_ADDR, sizeof(eh.srcaddr));
+	memcpy(eh.destaddr, MSRP_ADDR, sizeof(eh.destaddr));
+
+	buf_ptr -= sizeof(eh);
+	data_len += sizeof(eh);
+	memcpy(buf_ptr, (char *)&eh, sizeof(eh));
+
+	send(udp_sock, buf_ptr, data_len, 0);
+	char addr[7];
+	memcpy(addr, STATION_ADDR, 6);
+	addr[6] = 0;
+	printf("Hi %s\n", addr);
+	for(int i = 0; i < 6; i++) {
+			printf("%x\n", addr[i]);
+	}
+}
 
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock, unsigned char* multicast_addr);
 void sendMsrp(struct message* msg);
@@ -207,312 +289,6 @@ struct DomainFirstValue {
 	unsigned short vlan_id;
 };
 
-unsigned char* serialize(struct vector_attribute* va, int type, unsigned int* serialized_bytes) {
-	unsigned int firstLen;
-	unsigned char* origin_ptr;
-	unsigned char* buf = NULL;
-	unsigned int numofval;
-
-	if (type == 1) { // Talker Advertise
-		struct vector_attribute* va_ptr;
-		struct talkerAdvertiseFirstValue* tafv;
-		unsigned int vector_bytes;
-		int i;
-		int three;
-		unsigned char vector_encoded;
-
-		firstLen = TALKER_ADVERTISE_ATTR_LENGTH;
-		numofval = va->vh & 0x1FFF;
-
-		if (va->vec.allocated < numofval) {
-			free(buf);
-			printf("Serialization Error - Event Number Not sufficient\n");
-			return NULL;
-		}
-
-		vector_bytes = (unsigned int)((numofval + 2) / 3);
-		*serialized_bytes = firstLen + vector_bytes + 2;
-		buf = (unsigned char*)malloc(firstLen + vector_bytes + 2);
-		origin_ptr = buf;
-
-		*((unsigned short*)buf) = htons(va->vh);
-		buf += 2;
-		tafv = (struct talkerAdvertiseFirstValue*)va->firstValue;
-		memcpy(buf, tafv->sid.ethAddr, 6);
-		buf += 6;
-
-		*((unsigned short*)buf) = htons(tafv->sid.unique_id);
-		buf += 2;
-
-		memcpy(buf, tafv->dfp.dstAddr, 6);
-		buf += 6;
-
-		*((unsigned short*)buf) = htons(tafv->dfp.vlan_id);
-		buf += 2;
-
-		*((unsigned short*)buf) = htons(tafv->ts.max_frame_size);
-		buf += 2;
-
-		*((unsigned short*)buf) = htons(tafv->ts.max_interval);
-		buf += 2;
-
-		*buf = tafv->par;
-		buf += 1;
-
-		*((unsigned int*)buf) = htonl(tafv->accumulated_latency);
-		buf += 4;
-
-		for (vector_encoded = 0, three = 0, i = 0; i < numofval; i++) {
-			if (three == 0) {
-				vector_encoded = 0;
-				vector_encoded += va->vec.three_events[i] * 36;
-			}
-			if (three == 1) {
-				vector_encoded += va->vec.three_events[i] * 6;
-			}
-			if (three == 2) {
-				vector_encoded += va->vec.three_events[i];
-				*buf = vector_encoded;
-				buf += 1;
-
-				three = 0;
-				continue;
-			}
-			three++;
-		}
-		if (three != 0) {
-			*buf = vector_encoded;
-			buf += 1;
-		}
-	}
-	if (type == 2) { // Talker Failed
-		struct vector_attribute* va_ptr;
-		struct talkerFailedFirstValue* tffv;
-		unsigned int vector_bytes;
-		int i;
-		int three;
-		unsigned char vector_encoded;
-
-		firstLen = TALKER_FAILED_ATTR_LENGTH;
-		numofval = va->vh & 0x1FFF;
-
-		if (va->vec.allocated < numofval) {
-			free(buf);
-			printf("Serialization Error - Event Number Not sufficient\n");
-			return NULL;
-		}
-
-		vector_bytes = (unsigned int)((numofval + 2) / 3);
-		*serialized_bytes = firstLen + vector_bytes + 2;
-		buf = (unsigned char*)malloc(firstLen + vector_bytes + 2);
-		origin_ptr = buf;
-
-		*((unsigned short*)buf) = htons(va->vh);
-		buf += 2;
-
-		tffv = (struct talkerFailedFirstValue*)va->firstValue;
-		memcpy(buf, tffv->sid.ethAddr, 6);
-		buf += 6;
-
-		*((unsigned short*)buf) = htons(tffv->sid.unique_id);
-		buf += 2;
-
-		memcpy(buf, tffv->dfp.dstAddr, 6);
-		buf += 6;
-
-		*((unsigned short*)buf) = htons(tffv->dfp.vlan_id);
-		buf += 2;
-
-		*((unsigned short*)buf) = htons(tffv->ts.max_frame_size);
-		buf += 2;
-
-		*((unsigned short*)buf) = htons(tffv->ts.max_interval);
-		buf += 2;
-
-		*buf = tffv->par;
-		buf += 1;
-
-		*((unsigned int*)buf) = htonl(tffv->accumulated_latency);
-		buf += 4;
-
-		memcpy(buf, tffv->f_info.system_id, 8);
-		buf += 8;
-
-		*buf = tffv->f_info.f_code;
-		buf += 1;
-
-		for (vector_encoded = 0, three = 0, i = 0; i < numofval; i++) {
-			if (three == 0) {
-				vector_encoded = 0;
-				vector_encoded += va->vec.three_events[i] * 36;
-			}
-			if (three == 1) {
-				vector_encoded += va->vec.three_events[i] * 6;
-			}
-			if (three == 2) {
-				vector_encoded += va->vec.three_events[i];
-				*buf = vector_encoded;
-				buf += 1;
-
-				three = 0;
-				continue;
-			}
-			three++;
-		}
-		if (three != 0) {
-			*buf = vector_encoded;
-			buf += 1;
-		}
-	}
-	if (type == 3) { // Listener Declaration
-		struct vector_attribute* va_ptr;
-		struct ListenerDeclarationFirstValue* ldfv;
-		unsigned int vector_bytes;
-
-		unsigned char vector_encoded;
-		unsigned int three;
-		unsigned int four;
-		int i;
-
-		firstLen = LISTENER_DECLARATION_ATTR_LENGTH;
-		numofval = va->vh & 0x1FFF;
-
-		if (va->vec.allocated < numofval) {
-			free(buf);
-			printf("Serialization Error - Event Number Not sufficient\n");
-			return NULL;
-		}
-
-		vector_bytes = (unsigned int)(((numofval + 2) / 3) + ((numofval + 3) / 4));
-		*serialized_bytes = firstLen + vector_bytes + 2;
-		buf = (unsigned char*)malloc(firstLen + vector_bytes + 2);
-		origin_ptr = buf;
-
-		*((unsigned short*)buf) = htons(va->vh);
-		buf += 2;
-
-		ldfv = (struct ListenerDeclarationFirstValue*)va->firstValue;
-		memcpy(buf, ldfv->sid.ethAddr, 6);
-		buf += 6;
-
-		*((unsigned short*)buf) = htons(ldfv->sid.unique_id);
-		buf += 2;
-
-		for (vector_encoded = 0, three = 0, i = 0; i < numofval; i++) {
-			if (three == 0) {
-				vector_encoded = 0;
-				vector_encoded += va->vec.three_events[i] * 36;
-			}
-			if (three == 1) {
-				vector_encoded += va->vec.three_events[i] * 6;
-			}
-			if (three == 2) {
-				vector_encoded += va->vec.three_events[i];
-				*buf = vector_encoded;
-				buf += 1;
-
-				three = 0;
-				continue;
-			}
-			three++;
-		}
-		if (three != 0) {
-			*buf = vector_encoded;
-			buf += 1;
-		}
-		for (vector_encoded = 0, four = 0, i = 0; i < numofval; i++) {
-			if (four == 0) {
-				vector_encoded = 0;
-				vector_encoded += va->vec.four_events[i] * 64;
-			}
-			if (four == 1) {
-				vector_encoded += va->vec.four_events[i] * 16;
-			}
-			if (four == 2) {
-				vector_encoded += va->vec.four_events[i] * 4;
-			}
-			if (four == 3) {
-				vector_encoded += va->vec.four_events[i];
-				*buf = vector_encoded;
-				buf += 1;
-
-				four = 0;
-				continue;
-			}
-			four++;
-		}
-		if (four != 0) {
-			*buf = vector_encoded;
-			buf += 1;
-		}
-	}
-	if (type == 4) {
-		struct vector_attribute* va_ptr;
-		struct DomainFirstValue* dfv;
-		unsigned int vector_bytes;
-
-		unsigned char vector_encoded;
-		unsigned int three;
-
-		int i;
-
-		firstLen = DOMAIN_ATTR_LENGTH;
-		numofval = va->vh & 0x1FFF;
-
-		if (va->vec.allocated < numofval) {
-			free(buf);
-			printf("Serialization Error - Event Number Not sufficient\n");
-			return NULL;
-		}
-
-		vector_bytes = (unsigned int)((numofval + 2) / 3);
-		*serialized_bytes = firstLen + vector_bytes + 2;
-		buf = (unsigned char*)malloc(firstLen + vector_bytes + 2);
-		origin_ptr = buf;
-
-		*((unsigned short*)buf) = htons(va->vh);
-		buf += 2;
-
-		dfv = (struct DomainFirstValue*)va->firstValue;
-
-		*buf = dfv->classId;
-		buf += 1;
-
-		*buf = dfv->priority;
-		buf += 1;
-
-
-		for (vector_encoded = 0, three = 0, i = 0; i < numofval; i++) {
-			if (three == 0) {
-				vector_encoded = 0;
-				vector_encoded += va->vec.three_events[i] * 36;
-			}
-			if (three == 1) {
-				vector_encoded += va->vec.three_events[i] * 6;
-			}
-		*((unsigned short*)buf) = htons(dfv->vlan_id);
-		buf += 2;
-			if (three == 2) {
-				vector_encoded += va->vec.three_events[i];
-				*buf = vector_encoded;
-				buf += 1;
-
-				three = 0;
-				continue;
-			}
-			three++;
-		}
-		if (three != 0) {
-			*buf = vector_encoded;
-			buf += 1;
-		}
-	}
-	if (buf != NULL) {
-		return origin_ptr;
-	}
-	return NULL;
-}
-
 
 
 int main(int argc, char* argv[]) {
@@ -532,72 +308,12 @@ int main(int argc, char* argv[]) {
 	mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
 
 	// received = recv(msrp_sock, buffer, 1500, 0);
-	processMsrp(test);
+	forge_udp_ns();
+	// processMsrp(test);
 
 	close(msrp_sock);
+	close(udp_sock);
 	return 0;
-}
-
-void sendMsrp(struct message* msg) {
-	unsigned char* msgbuf, * msgbuf_wrptr;
-	int msgLength = 0;
-	int bytes = 0;
-	struct eth_header* eh;
-	struct mrpdu* mrp;
-
-	msgbuf = (unsigned char*)malloc(2000);
-	if (msgbuf == NULL) {
-		return;
-	}
-
-	memset(msgbuf, 0, 2000);
-	msgbuf_wrptr = msgbuf;
-
-	eh = (struct eth_header*)msgbuf_wrptr;
-
-	eh->etherType = htons(0x22EA);
-
-	memcpy(eh->destaddr, MSRP_ADDR, sizeof(eh->destaddr));
-	memcpy(eh->srcaddr, STATION_ADDR, sizeof(eh->srcaddr));
-
-	msgbuf_wrptr += sizeof(struct eth_header);
-
-	mrp = (struct mrpdu*)msgbuf_wrptr;
-
-	mrp->protocolVersion = 0;
-
-	msgbuf_wrptr++;
-
-	{
-		unsigned char* serialized_va;
-		unsigned int serialized_bytes;
-
-		struct message* msg_ptr;
-
-		msg_ptr = (struct message*)msgbuf_wrptr;
-		msg_ptr->attrType = msg->attrType;
-		msg_ptr->attributeLength = msg->attributeLength;
-
-		msgbuf_wrptr += 4;
-
-		serialized_va = serialize(&msg->va, msg->attrType, &serialized_bytes);
-
-		memcpy(msgbuf_wrptr, serialized_va, serialized_bytes);
-		msg->attributeListLength = serialized_bytes + 2;
-		msg_ptr->attributeListLength = htons(msg->attributeListLength);
-
-		free(serialized_va);
-		msgbuf_wrptr += serialized_bytes;
-
-		*((unsigned short*)msgbuf_wrptr) = 0x0000; // EndMark
-		msgbuf_wrptr += 2;
-	}
-
-	memset(msgbuf_wrptr, 0, 2); // mrpdu EndMark
-	msgbuf_wrptr += 2;
-
-	bytes = mrpd_send(msrp_sock, msgbuf, (int)(msgbuf_wrptr - msgbuf), 0);
-	free(msgbuf);
 }
 
 void processMsrp(unsigned char* data) {
@@ -756,18 +472,6 @@ int mrpd_init_protocol_socket(u_int16_t etype, int* sock,
 		strlen(interface));
 	if (0 != rc) {
 		printf("Bind option error\n");
-		close(lsock);
-		return -1;
-	}
-
-	multicast_req.mr_ifindex = if_request.ifr_ifindex;
-	multicast_req.mr_type = PACKET_MR_MULTICAST;
-	multicast_req.mr_alen = 6;
-	memcpy(multicast_req.mr_address, multicast_addr, 6);
-
-	rc = setsockopt(lsock, SOL_PACKET, PACKET_ADD_MEMBERSHIP,
-		&multicast_req, sizeof(multicast_req));
-	if (0 != rc) {
 		close(lsock);
 		return -1;
 	}
