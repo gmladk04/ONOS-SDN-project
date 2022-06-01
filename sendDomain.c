@@ -128,10 +128,12 @@ char src_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 
 char dst_addr[16]={ 0x12, 0x34, 0x12, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
 char lladdr[6]={0x12, 0x12, 0x12,0x12, 0x12, 0x12};
 
+void processNA(unsigned char * data);
+
 void forge_udp_ns() {
 	char buf[1500];
 	char * buf_ptr;
-	unsigned int data_len;
+	unsigned int data_len = 0;
 
 	struct udp_ns_header unh;
 	struct udp_header uh;
@@ -156,15 +158,15 @@ void forge_udp_ns() {
 
 	uh.sourceport = htons(12345);
 	uh.destinationport = htons(12345);
-	uh.udp_length = htons(10);
+	uh.udp_length = htons(40);
 	uh.udp_checksum = htons(0);
 
 	buf_ptr -= sizeof(uh);
 	data_len += sizeof(uh);
 	memcpy(buf_ptr, (char *)&uh, sizeof(uh));
 
-	ih.ver_tc_flow_label=0;
-	ih.payload_length=htons(10);
+	ih.ver_tc_flow_label=96;
+	ih.payload_length=htons(40);
 	ih.hop_limit=64;
 	ih.nh=17;
 	memcpy(ih.sourceaddr, src_addr ,16);
@@ -191,6 +193,8 @@ void forge_udp_ns() {
 	for(int i = 0; i < 6; i++) {
 			printf("%x\n", addr[i]);
 	}
+
+	processNA((unsigned char *)buf_ptr);
 }
 
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock, unsigned char* multicast_addr);
@@ -309,7 +313,7 @@ int main(int argc, char* argv[]) {
 
 	// received = recv(msrp_sock, buffer, 1500, 0);
 	forge_udp_ns();
-	// processMsrp(test);
+	processMsrp(test);
 
 	close(msrp_sock);
 	close(udp_sock);
@@ -481,3 +485,81 @@ int mrpd_init_protocol_socket(u_int16_t etype, int* sock,
 	return 0;
 }
 
+void processNA(unsigned char* data) {
+	unsigned char* ptr;
+	unsigned char type;
+	unsigned char code;
+	unsigned short checksum;
+	unsigned int reserved;
+	unsigned char target_address[16];
+	unsigned char op_type;
+	unsigned char op_length;
+	unsigned char lladdr[6];
+
+	unsigned char string_prefix[256];
+
+	ptr = data;
+
+	ptr += 61;
+	
+	// Channel Info start
+	ptr++;
+
+	type = *ptr;
+	ptr++;
+
+	printf("Type : %d\n", type);
+
+	code = *ptr;
+    ptr++;
+    printf("code : %d\n", code);
+
+    ptr += 6;//checksum & reserved
+
+
+	for(int i = 0; i < 16; i++) {
+		target_address[i] = *ptr;
+		ptr++;
+	}
+
+	printf("Target Address : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", target_address[0], target_address[1], target_address[2], target_address[3], target_address[4], target_address[5], target_address[6], target_address[7], target_address[8], target_address[9], target_address[10], target_address[11], target_address[12], target_address[13], target_address[14], target_address[15]);
+
+	ptr += 2;
+
+	
+	for(int i = 0; i < 6; i++) {
+		lladdr[i] = *ptr;
+		ptr++;
+	}//lladdr
+	
+	printf("lladdr : %02x:%02x:%02x:%02x:%02x:%02x\n", lladdr[0], lladdr[1], lladdr[2], lladdr[3], lladdr[4], lladdr[5]);
+
+	/*std::string default_gw_string = string_format("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], ipv6_prefix[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
+
+	std::string str = "ip -6 route add default via ";
+	str = str + default_gw_string;
+
+	std::string dev = " dev ";
+	std::string interface_str (interface);
+	str = str + dev;
+	str = str + interface_str;
+	
+	system(str.c_str());
+
+    */
+	
+    /*
+	std::string default_gw_mac_string = string_format("%02x:%02x:%02x:%02x:%02x:%02x", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
+// ip -6 neigh add <IPv6 address> lladdr <link-layer address> dev <device>
+	std::string str_neigh = "ip -6 neigh add ";
+	str_neigh = str_neigh + default_gw_string;
+
+	std::string str_lladdr = " lladdr ";
+	str_neigh = str_neigh + str_lladdr;
+	str_neigh = str_neigh + default_gw_mac_string;
+	str_neigh = str_neigh + dev;
+	str_neigh = str_neigh + interface_str;
+
+	system(str_neigh.c_str());
+    */
+}
