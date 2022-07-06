@@ -33,6 +33,8 @@ def topology():
     sta2 = net.addStation('sta2', ip='10.0.0.2/8', position='70,70,0')
     sta3 = net.addStation('sta3', ip='10.0.0.3/8', position='103,70,0')
     sta4 = net.addStation('sta4', ip='10.0.0.4/8', position='37,70,0')
+   # ap1 = net.addAccessPoint('ap1', cls=OVSKernelAP, ssid='ap1-ssid', mode='g', channel='1',
+   #                          position='37,70,0')
     
     c0 = net.addController(name='c0', controller=RemoteController, 
                            ip='127.0.0.1',
@@ -51,13 +53,13 @@ def topology():
     info("*** Starting ITS Links\n")
     
     net.addLink(sta1, intf='sta1-wlan0', cls=ITSLink,
-                channel=165)
+                channel=176)
     net.addLink(sta2, intf='sta2-wlan0', cls=ITSLink,
-                channel=165)
+                channel=176)
     net.addLink(sta3, intf='sta3-wlan0', cls=ITSLink,
-                channel=165)
+                channel=176)
     net.addLink(sta4, intf='sta4-wlan0', cls=ITSLink,
-                channel=165)
+                channel=176)
 
 
     net.addLink(s1,s3)
@@ -65,9 +67,18 @@ def topology():
     net.addLink(s3,s5)
     net.addLink(s4,s5)
     net.addLink(s5, h1)
-
-   #sta1sta4 = {'bw':80 }
-   #net.addLink(sta1, sta4, **sta1sta4)
+   # net.addLink(sta4,s1)
+   # net.addLink(sta2, s1)
+   # net.addLink(sta3, s2)
+    
+    sta1sta4 = {'bw':80 }
+    net.addLink(sta1, sta4, **sta1sta4)
+    s1sta4 = {'bw':80 }
+    net.addLink(s1, sta4, **s1sta4)
+    s1sta2 = {'bw':80 }
+    net.addLink(s1, sta2, **s1sta2)
+    s2sta3 = {'bw':80 }
+    net.addLink(s2, sta3, **s2sta3)
 
     info("*** Starting network\n")
     net.build()
@@ -77,6 +88,7 @@ def topology():
     s3.start([c0])
     s4.start([c0])
     s5.start([c0])
+   # ap1.start([c0])
 
     info("*** Running CLI\n")
     CLI(net)
