@@ -1,0 +1,29 @@
+Manifest-Version: 1.0
+Bnd-LastModified: 1653459321067
+Build-Jdk: 11.0.15
+Built-By: jisu
+Bundle-Description: ONOS OSGi bundle archetype
+Bundle-License: http://www.apache.org/licenses/LICENSE-2.0.txt
+Bundle-ManifestVersion: 2
+Bundle-Name: myapp
+Bundle-SymbolicName: org.example.myapp
+Bundle-Version: 1.0.0.SNAPSHOT
+Created-By: Apache Maven Bundle Plugin
+Export-Package: org.onosproject.provider.myapp;uses:="org.onlab.packet,o
+ rg.onosproject.core,org.onosproject.net.host,org.onosproject.net.packet
+ ";version="1.0.0"
+Import-Package: org.onlab.packet;version="[2.7,3)",org.onosproject.core;
+ version="[2.7,3)",org.onosproject.net;version="[2.7,3)",org.onosproject
+ .net.flow;version="[2.7,3)",org.onosproject.net.host;version="[2.7,3)",
+ org.onosproject.net.packet;version="[2.7,3)",org.slf4j;version="[1.7,2)
+ "
+Require-Capability: osgi.service;filter:="(objectClass=org.onosproject.c
+ ore.CoreService)";effective:=active,osgi.service;filter:="(objectClass=
+ org.onosproject.net.host.HostService)";effective:=active,osgi.service;f
+ ilter:="(objectClass=org.onosproject.net.packet.PacketService)";effecti
+ ve:=active,osgi.extender;filter:="(&(osgi.extender=osgi.component)(vers
+ ion>=1.4.0)(!(version>=2.0.0)))",osgi.ee;filter:="(&(osgi.ee=JavaSE)(ve
+ rsion=11))"
+Service-Component: OSGI-INF/org.onosproject.provider.myapp.AppComponent.
+ xml
+Tool: Bnd-4.1.0.201810181252
