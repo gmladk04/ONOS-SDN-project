@@ -28,6 +28,7 @@
 #include <stdexcept>
 #include <string>
 
+#include <math.h>
 #ifdef MRP_CPPUTEST
 size_t mrpd_send(SOCKET sockfd, const void* buf, size_t len, int flags);
 #else
@@ -124,14 +125,15 @@ char* interface;
 double dist_max=0;
 
 char target_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
-char src_addr[16] = {0x12, 0x12, 0x34, 0x3printf("3D location: %lf  %lf  %lf\n", x, y, z);2, 0x12};
+char src_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
+char dst_addr[16]={ 0x12, 0x34, 0x12, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
+char lladdr[6]={0x12, 0x12, 0x12,0x12, 0x12, 0x12};
 
 void processNA(unsigned char * data);
-
 void forge_udp_ns() {
 	char buf[1500];
 	char * buf_ptr;
-	unsigned int data_len = 0;printf("3D location: %lf  %lf  %lf\n", x, y, z);
+	unsigned int data_len = 0;
 
 	struct udp_ns_header unh;
 	struct udp_header uh;
@@ -142,14 +144,22 @@ void forge_udp_ns() {
 
 	buf_ptr -= sizeof(unh);
 	data_len += sizeof(unh);
-	printf("3D location: %lf  %lf  %lf\n", x, y, z);
+	
+	unh.type=135;
+	unh.code =0;
+	unh.checksum=htons(0);
 	unh.reserved=htons(0);
 	memcpy(unh.target_address, target_addr ,16);
 	unh.op_type=1;
 	unh.op_length=1;
 	memcpy(unh.lladdr, lladdr,6);
 	
-	memcpy(buf_ptr, (char *)&unh, sizeof(printf("3D location: %lf  %lf  %lf\n", x, y, z);
+	memcpy(buf_ptr, (char *)&unh, sizeof(unh));
+
+	uh.sourceport = htons(12345);
+	uh.destinationport = htons(12345);
+	uh.udp_length = htons(40);
+	uh.udp_checksum = htons(0);
 
 	buf_ptr -= sizeof(uh);
 	data_len += sizeof(uh);
@@ -176,6 +186,7 @@ void forge_udp_ns() {
 	memcpy(buf_ptr, (char *)&eh, sizeof(eh));
 
 	send(udp_sock, buf_ptr, data_len, 0);
+
 	char addr[7];
 	memcpy(addr, STATION_ADDR, 6);
 	addr[6] = 0;
@@ -186,7 +197,6 @@ void forge_udp_ns() {
 
 	processNA((unsigned char *)buf_ptr);
 }
-
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock, unsigned char* multicast_addr);
 void sendMsrp(struct message* msg);
 void processMsrp(unsigned char* data);
@@ -306,6 +316,9 @@ int main(int argc, char* argv[]) {
 	processMsrp(buffer);
 	forge_udp_ns();
 
+	sleep(4000);
+	received = recv(msrp_sock, buffer, 1500, 0);
+	processMsrp(buffer);
 
 	close(msrp_sock);
 	close(udp_sock);
@@ -325,9 +338,9 @@ void processMsrp(unsigned char *data) {
 	/*3D location*/
 	unsigned char* ptr2;
 	double dist=0;
-	double x=0;
-	double y=0;
-	double z=0;
+	double x;
+	double y;
+	double z;
 	unsigned char *ptr3;
 	
 	ptr2=data;
