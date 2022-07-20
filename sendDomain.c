@@ -315,13 +315,23 @@ int main(int argc, char* argv[]) {
 	
 	processMsrp(buffer);
 	forge_udp_ns();
-
-	sleep(4000);
-	received = recv(msrp_sock, buffer, 1500, 0);
-	processMsrp(buffer);
-
 	close(msrp_sock);
 	close(udp_sock);
+	
+	sleep(3);
+
+	interface = strdup(argv[1]);
+	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
+	mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
+
+	received = recv(msrp_sock, buffer, 1500, 0);
+	
+	processMsrp(buffer);
+	forge_udp_ns();
+	close(msrp_sock);
+	close(udp_sock);
+
+	
 	return 0;
 }
 
