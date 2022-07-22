@@ -118,9 +118,13 @@ public class MyNdpProvider extends AbstractProvider {
     ConcurrentHashMap<Integer, FlowRule> lbrFlowDB= new ConcurrentHashMap<Integer, FlowRule>();
     ConcurrentHashMap<Integer, FlowRule> rsuFlowDB= new ConcurrentHashMap<Integer, FlowRule>();
 
+    ConcurrentHashMap<byte[], VehicleInfo> addrDB2 = new ConcurrentHashMap<byte[], VehicleInfo>();
+    ConcurrentHashMap<Integer, FlowRule> lbrFlowDB2= new ConcurrentHashMap<Integer, FlowRule>();
+    ConcurrentHashMap<Integer, FlowRule> rsuFlowDB2= new ConcurrentHashMap<Integer, FlowRule>();
+
 
     ConcurrentHashMap<DeviceId, IpAddress> rsuIpDB= new ConcurrentHashMap<DeviceId, IpAddress>();
-
+    ConcurrentHashMap<DeviceId, IpAddress> rsuIpDB2= new ConcurrentHashMap<DeviceId, IpAddress>();
     /**
      * Creates an OpenFlow link provider.
      */
@@ -140,7 +144,7 @@ public class MyNdpProvider extends AbstractProvider {
         //add RSU ip addr
         rsuIpDB.put(DeviceId.deviceId("of:1000000000000001"), IpAddress.valueOf("fe80::200:ff:fe00:8"));
         rsuIpDB.put(DeviceId.deviceId("of:1000000000000002"), IpAddress.valueOf("fe80::200:ff:fe00:9"));
-        rsuIpDB.put(DeviceId.deviceId("of:1000000000000003"), IpAddress.valueOf("fe80::200:ff:fe00:10"));
+        rsuIpDB2.put(DeviceId.deviceId("of:1000000000000003"), IpAddress.valueOf("fe80::200:ff:fe00:10"));
         log.info("Started");
     }
 
@@ -255,8 +259,8 @@ public class MyNdpProvider extends AbstractProvider {
                     }
                     log.info("registration");
                     // set LBR switch's flow rule
-                  //  log.info(IpAddress.valueOf("fe80::200:ff:fe00:9").toString());
-                  //  log.info(addrDB.get(target_addr).toString());
+                    //  log.info(IpAddress.valueOf("fe80::200:ff:fe00:9").toString());
+                    //  log.info(addrDB.get(target_addr).toString());
                     log.info(addrDB.get(target_addr).deviceId.toString());
                     log.info(rsuIpDB.get(DeviceId.deviceId("of:1000000000000001")).toString());
                     installFlowRule(DeviceId.deviceId("of:0000000000000002"), rsuIpDB.get(DeviceId.deviceId("of:1000000000000001")), true);
@@ -265,7 +269,6 @@ public class MyNdpProvider extends AbstractProvider {
                     //IpAddress.valueOf(IpAddress.Version.INET6,target_addr)
                     sendSuccessNa(target_addr, vehicle_mac);
                 }
-
                 else if(ns.getCode()==1){ //Handover intra
                     if(!addrDB.containsKey(target_addr)){ // no entry - send error NDP-NA
                         sendErrorNa(target_addr, vehicle_mac);
@@ -276,13 +279,23 @@ public class MyNdpProvider extends AbstractProvider {
                     modifyFlowRule(DeviceId.deviceId("of:1000000000000002"), rsuFlowDB.get(1), IpAddress.valueOf(IpAddress.Version.INET6,target_addr), false);
                     sendSuccessNa(target_addr, vehicle_mac);
                 }
-
-                else if(ns.getCode()==2){ //Handover inter
-                    if(!addrDB.containsKey(target_addr)){ // no entry - send error NDP-NA
+               else if(ns.getCode()==2){ //Handover inter
+                    if(!addrDB2.containsKey(target_addr)){ // no entry - send error NDP-NA
                         sendErrorNa(target_addr, vehicle_mac);
                     }
+                    else{ // no entry - normal situation, insert new entry with the target address
+                        addrDB2.put(target_addr, new VehicleInfo(vehicle_mac, deviceId));
+                    }
                     // modify LBR 's flow rule
-                    modifyFlowRule(DeviceId.deviceId("of:0000000000000003"), lbrFlowDB.get(1), rsuIpDB.get(DeviceId.deviceId("of:1000000000000003")), true);
+                    log.info(addrDB2.get(target_addr).deviceId.toString());
+                    log.info(rsuIpDB2.get(DeviceId.deviceId("of:1000000000000003")).toString());
+                    installFlowRule2(DeviceId.deviceId("of:0000000000000003"), rsuIpDB2.get(DeviceId.deviceId("of:1000000000000003")), true);
+                    // set RSU 's flow rule
+                    installFlowRule2(DeviceId.deviceId("of:1000000000000003"), rsuIpDB2.get(DeviceId.deviceId("of:1000000000000003")), false);
+                    //IpAddress.valueOf(IpAddress.Version.INET6,target_addr)
+                    sendSuccessNa(target_addr, vehicle_mac);
+
+                    modifyFlowRule(DeviceId.deviceId("of:0000000000000002"), lbrFlowDB.get(1), rsuIpDB.get(DeviceId.deviceId("of:1000000000000002")), true);
                     // modify RSU's flow rule
                     modifyFlowRule(DeviceId.deviceId("of:1000000000000002"), rsuFlowDB.get(1), IpAddress.valueOf(IpAddress.Version.INET6,target_addr), false);
                     sendSuccessNa(target_addr, vehicle_mac);
@@ -338,7 +351,53 @@ public class MyNdpProvider extends AbstractProvider {
             rsuFlowDB.put(1, flowRule.build()); log.info("put entry to DB - done -Rsu");
         }
     }
+    private void installFlowRule2(DeviceId deviceId, IpAddress ipv6, boolean isLBR){
+        log.info("install rule module");
+        log.info(ipv6.toString());
+        FlowRule.Builder flowRule = DefaultFlowRule.builder();
+        flowRule.fromApp(appId)
+                .withPriority(40000)
+                .forTable(1)
+                .forDevice(deviceId)
+                .makePermanent();
 
+        if(isLBR) { //LBR2
+            log.info("set LBR");
+
+            TrafficSelector.Builder selector = DefaultTrafficSelector.builder();
+            selector.matchEthType((short)0x86dd);
+            selector.matchIPv6Dst(IpPrefix.valueOf(ipv6, 128));
+
+            TrafficTreatment.Builder treatment = DefaultTrafficTreatment.builder();
+            treatment.add(Instructions.modL3IPv6Dst(ipv6)); //rsu's ip from rsuIpDB
+            treatment.setOutput(PortNumber.portNumber(1));
+            log.info("treatment and selector setting done");
+
+            flowRule.withTreatment(treatment.build());
+            flowRule.withSelector(selector.build());
+            log.info("what is problem?");
+
+            flowRuleService.applyFlowRules(flowRule.build());  log.info("apply rule - done - lbr");
+            lbrFlowDB2.put(1, flowRule.build()); log.info("put entry to DB - done - lbr");
+
+        }
+        else{ //RSU3
+            log.info("set RSU3");
+            TrafficSelector.Builder selector = DefaultTrafficSelector.builder();
+            selector.matchEthType((short)0x86dd);
+            selector.matchIPv6Dst(IpPrefix.valueOf(ipv6, 128));
+
+            TrafficTreatment.Builder treatment = DefaultTrafficTreatment.builder();
+            treatment.add(Instructions.modL3IPv6Dst(ipv6));
+            treatment.setOutput(PortNumber.portNumber(1));
+
+            flowRule.withTreatment(treatment.build())
+                    .withSelector(selector.build());
+
+            flowRuleService.applyFlowRules(flowRule.build()); log.info("apply rule - done - Rsu");
+            rsuFlowDB2.put(1, flowRule.build()); log.info("put entry to DB - done -Rsu");
+        }
+    }
     private void modifyFlowRule(DeviceId deviceId, FlowRule preRule, IpAddress ipv6, boolean isLBR){
         log.info("modify flow rule module");
         flowRuleService.removeFlowRules(preRule); log.info("rule remove done");
@@ -366,7 +425,7 @@ public class MyNdpProvider extends AbstractProvider {
             lbrFlowDB.replace(1, flowRule.build()); log.info("replace entry to DB - done -lbr");
 
         }
-        else{ //RSU1
+        else{ //RSU2
             log.info("modify RSU's");
             TrafficSelector.Builder selector = DefaultTrafficSelector.builder();
             selector.matchEthType((short)0x86dd);
@@ -423,7 +482,7 @@ public class MyNdpProvider extends AbstractProvider {
 
         //Na contents
         naPacket.setPacket_type((byte)136);
-        naPacket.setCode((byte) 1); // it means error when it is not 0 
+        naPacket.setCode((byte) 1); // it means error when it is not 0
         naPacket.setTarget_addr(target_addr);
         naPacket.setMac(vehicle_mac);
 
