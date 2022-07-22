@@ -280,7 +280,7 @@ public class MyNdpProvider extends AbstractProvider {
                     sendSuccessNa(target_addr, vehicle_mac);
                 }
                else if(ns.getCode()==2){ //Handover inter
-                    if(!addrDB2.containsKey(target_addr)){ // no entry - send error NDP-NA
+                    if(addrDB2.containsKey(target_addr)){ // no entry - send error NDP-NA
                         sendErrorNa(target_addr, vehicle_mac);
                     }
                     else{ // no entry - normal situation, insert new entry with the target address
@@ -293,12 +293,12 @@ public class MyNdpProvider extends AbstractProvider {
                     // set RSU 's flow rule
                     installFlowRule2(DeviceId.deviceId("of:1000000000000003"), rsuIpDB2.get(DeviceId.deviceId("of:1000000000000003")), false);
                     //IpAddress.valueOf(IpAddress.Version.INET6,target_addr)
-                    sendSuccessNa(target_addr, vehicle_mac);
+                    sendSuccessNa3(target_addr, vehicle_mac);
 
-                    modifyFlowRule(DeviceId.deviceId("of:0000000000000002"), lbrFlowDB.get(1), rsuIpDB.get(DeviceId.deviceId("of:1000000000000002")), true);
+                    modifyFlowRule2(DeviceId.deviceId("of:0000000000000002"), lbrFlowDB.get(1), rsuIpDB.get(DeviceId.deviceId("of:1000000000000002")), true);
                     // modify RSU's flow rule
-                    modifyFlowRule(DeviceId.deviceId("of:1000000000000002"), rsuFlowDB.get(1), IpAddress.valueOf(IpAddress.Version.INET6,target_addr), false);
-                    sendSuccessNa(target_addr, vehicle_mac);
+                    modifyFlowRule2(DeviceId.deviceId("of:1000000000000002"), rsuFlowDB.get(1), IpAddress.valueOf(IpAddress.Version.INET6,target_addr), false);
+                    sendSuccessNa2(target_addr, vehicle_mac);
                 }
             }
         }
@@ -443,7 +443,51 @@ public class MyNdpProvider extends AbstractProvider {
 
         }
     }
+    private void modifyFlowRule2(DeviceId deviceId, FlowRule preRule, IpAddress ipv6, boolean isLBR){
+        log.info("modify flow rule module");
+        flowRuleService.removeFlowRules(preRule); log.info("rule remove done");
+        FlowRule.Builder flowRule = DefaultFlowRule.builder();
+        flowRule.fromApp(appId)
+                .withPriority(40000)
+                .forDevice(deviceId)
+                .forTable(1)
+                .makePermanent();
 
+        if(isLBR) {
+            log.info("modify LBR's");
+            TrafficSelector.Builder selector = DefaultTrafficSelector.builder();
+            selector.matchEthType((short)0x86dd);
+            selector.matchIPv6Dst(IpPrefix.valueOf(ipv6, 128));
+
+            TrafficTreatment.Builder treatment = DefaultTrafficTreatment.builder();
+            treatment.add(Instructions.modL3IPv6Dst(ipv6))
+                    .setOutput(PortNumber.portNumber(1));
+
+            flowRule.withTreatment(treatment.build())
+                    .withSelector(selector.build());
+
+            flowRuleService.applyFlowRules(flowRule.build()); log.info("remove rule - done - lbr");
+            lbrFlowDB.remove(1, flowRule.build()); log.info("remove entry to DB - done -lbr");
+
+        }
+        else{ //RSU2
+            log.info("modify RSU's");
+            TrafficSelector.Builder selector = DefaultTrafficSelector.builder();
+            selector.matchEthType((short)0x86dd);
+            selector.matchIPv6Dst(IpPrefix.valueOf(ipv6, 128));
+
+            TrafficTreatment.Builder treatment = DefaultTrafficTreatment.builder();
+            treatment.add(Instructions.modL3IPv6Dst(ipv6))
+                    .setOutput(PortNumber.portNumber(1));
+
+            flowRule.withTreatment(treatment.build())
+                    .withSelector(selector.build());
+
+            flowRuleService.applyFlowRules(flowRule.build()); log.info("remove rule - done - Rsu");
+            rsuFlowDB.remove(1, flowRule.build()); log.info("remove entry to DB - done -Rsu");
+
+        }
+    }
     private void sendSuccessNa(byte[] target_addr, MacAddress vehicle_mac) {
         log.info("send success NA");
         Ethernet ethPacket = new Ethernet();
@@ -472,7 +516,62 @@ public class MyNdpProvider extends AbstractProvider {
         OutboundPacket pkt = new DefaultOutboundPacket(DeviceId.deviceId("of:1000000000000001"), DefaultTrafficTreatment.builder().setOutput(PortNumber.portNumber(1)).build(), ByteBuffer.wrap(ethPacket.serialize()));
         packetService.emit(pkt);
     }
+    private void sendSuccessNa2(byte[] target_addr, MacAddress vehicle_mac) {
+        log.info("send success NA to RSU2");
+        Ethernet ethPacket = new Ethernet();
+        IPv6 ipPacket = new IPv6();
+        UDP udpPacket = new UDP();
+        NaFrame naPacket = new NaFrame();
 
+        //Na contents
+        naPacket.setPacket_type((byte)136);
+        naPacket.setCode((byte) 0);
+        naPacket.setTarget_addr(target_addr);
+        naPacket.setMac(vehicle_mac);
+
+        //udp contents
+        udpPacket.setPayload(naPacket);
+
+        //ip contents
+        ipPacket.setPayload(udpPacket);
+
+        //ethernet contents
+        ethPacket.setEtherType((short) 0x86dd);
+        ethPacket.setSourceMACAddress(MacAddress.valueOf("12:eb:d8:f4:17:84")).setPayload(ipPacket);
+        ethPacket.setDestinationMACAddress(MacAddress.valueOf("ff:ff:ff:ff:ff:ff"));
+        ethPacket.setPad(true);
+
+        OutboundPacket pkt = new DefaultOutboundPacket(DeviceId.deviceId("of:1000000000000002"), DefaultTrafficTreatment.builder().setOutput(PortNumber.portNumber(1)).build(), ByteBuffer.wrap(ethPacket.serialize()));
+        packetService.emit(pkt);
+    }
+    private void sendSuccessNa3(byte[] target_addr, MacAddress vehicle_mac) {
+        log.info("send success NA to RSU3");
+        Ethernet ethPacket = new Ethernet();
+        IPv6 ipPacket = new IPv6();
+        UDP udpPacket = new UDP();
+        NaFrame naPacket = new NaFrame();
+
+        //Na contents
+        naPacket.setPacket_type((byte)136);
+        naPacket.setCode((byte) 0);
+        naPacket.setTarget_addr(target_addr);
+        naPacket.setMac(vehicle_mac);
+
+        //udp contents
+        udpPacket.setPayload(naPacket);
+
+        //ip contents
+        ipPacket.setPayload(udpPacket);
+
+        //ethernet contents
+        ethPacket.setEtherType((short) 0x86dd);
+        ethPacket.setSourceMACAddress(MacAddress.valueOf("22:eb:d8:f4:17:84")).setPayload(ipPacket);
+        ethPacket.setDestinationMACAddress(MacAddress.valueOf("ff:ff:ff:ff:ff:ff"));
+        ethPacket.setPad(true);
+
+        OutboundPacket pkt = new DefaultOutboundPacket(DeviceId.deviceId("of:1000000000000003"), DefaultTrafficTreatment.builder().setOutput(PortNumber.portNumber(1)).build(), ByteBuffer.wrap(ethPacket.serialize()));
+        packetService.emit(pkt);
+    }
     private void sendErrorNa(byte[] target_addr, MacAddress vehicle_mac) {
         log.info("send Error NA");
         Ethernet ethPacket = new Ethernet();
