@@ -124,11 +124,14 @@ int udp_sock;
 char* interface;
 double dist_max=0;
 
+
 char target_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
 char src_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
 char dst_addr[16]={ 0x12, 0x34, 0x12, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
 char lladdr[6]={0x12, 0x12, 0x12,0x12, 0x12, 0x12};
 
+char dst_addr2[16]={ 0x12, 0x34, 0x12, 0x35, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
+char dst_addr3[16]={ 0x34, 0x34, 0x12, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
 //void processHandoverIntra(unsigned char *data);
 void processNA(unsigned char * data);
 
@@ -216,7 +219,7 @@ void forge_udp_ns_intra() { //code == 1
 	data_len += sizeof(unh);
 	
 	unh.type=135;
-	unh.code =1; //handover
+	unh.code =1; //handover intra
 	unh.checksum=htons(0);
 	unh.reserved=htons(0);
 	memcpy(unh.target_address, target_addr ,16);
@@ -240,7 +243,7 @@ void forge_udp_ns_intra() { //code == 1
 	ih.hop_limit=64;
 	ih.nh=17;
 	memcpy(ih.sourceaddr, src_addr ,16);
-	memcpy(ih.destaddr, dst_addr ,16);
+	memcpy(ih.destaddr, dst_addr2 ,16);
 
 	
 	buf_ptr -= sizeof(ih);
@@ -267,6 +270,75 @@ void forge_udp_ns_intra() { //code == 1
 
 	processNA((unsigned char *)buf_ptr);
 }
+
+void forge_udp_ns_inter() { //code == 2
+	char buf[1500];
+	char * buf_ptr;
+	unsigned int data_len = 0;
+
+	struct udp_ns_header unh;
+	struct udp_header uh;
+	struct ipv6_header ih;
+	struct eth_header eh;
+
+	buf_ptr = buf + 1500;
+
+	buf_ptr -= sizeof(unh);
+	data_len += sizeof(unh);
+	
+	unh.type=135;
+	unh.code =2; //handover inter
+	unh.checksum=htons(0);
+	unh.reserved=htons(0);
+	memcpy(unh.target_address, target_addr ,16);
+	unh.op_type=1;
+	unh.op_length=1;
+	memcpy(unh.lladdr, lladdr,6);
+	
+	memcpy(buf_ptr, (char *)&unh, sizeof(unh));
+
+	uh.sourceport = htons(12345);
+	uh.destinationport = htons(12345);
+	uh.udp_length = htons(40);
+	uh.udp_checksum = htons(0);
+
+	buf_ptr -= sizeof(uh);
+	data_len += sizeof(uh);
+	memcpy(buf_ptr, (char *)&uh, sizeof(uh));
+
+	ih.ver_tc_flow_label=96;
+	ih.payload_length=htons(40);
+	ih.hop_limit=64;
+	ih.nh=17;
+	memcpy(ih.sourceaddr, src_addr ,16);
+	memcpy(ih.destaddr, dst_addr3,16);
+
+	
+	buf_ptr -= sizeof(ih);
+	data_len += sizeof(ih);
+	memcpy(buf_ptr, (char *)&ih, sizeof(ih));
+
+	eh.etherType = htons(0x86dd);
+	memcpy(eh.srcaddr, STATION_ADDR, sizeof(eh.srcaddr));
+	memcpy(eh.destaddr, MSRP_ADDR, sizeof(eh.destaddr));
+
+	buf_ptr -= sizeof(eh);
+	data_len += sizeof(eh);
+	memcpy(buf_ptr, (char *)&eh, sizeof(eh));
+
+	send(udp_sock, buf_ptr, data_len, 0);
+
+	char addr[7];
+	memcpy(addr, STATION_ADDR, 6);
+	addr[6] = 0;
+	//printf("Hi %s\n", addr);
+	for(int i = 0; i < 6; i++) {
+			printf("%x\n", addr[i]);
+	}
+
+	processNA((unsigned char *)buf_ptr);
+}
+
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock, unsigned char* multicast_addr);
 void sendMsrp(struct message* msg);
 void processMsrp(unsigned char* data);
@@ -388,7 +460,7 @@ int main(int argc, char* argv[]) {
 	close(msrp_sock);
 	close(udp_sock);
 	
-	sleep(3);
+	sleep(2);
 
 	interface = strdup(argv[1]);
 	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
@@ -398,6 +470,18 @@ int main(int argc, char* argv[]) {
 	
 	processMsrp(buffer);
 	forge_udp_ns_intra();
+
+	sleep(2);
+
+	interface = strdup(argv[1]);
+	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
+	mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
+
+	received = recv(msrp_sock, buffer, 1500, 0);
+	
+	processMsrp(buffer);
+	forge_udp_ns_inter();
+
 	close(msrp_sock);
 	close(udp_sock);
 
@@ -475,7 +559,7 @@ void processMsrp(unsigned char *data) {
 
 	std::string default_gw_string = string_format("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], default_gw[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
 
-	std::string str = "ip -6 route replace default via ";
+	std::string str = "ip -6 route add default via ";
 	str = str + default_gw_string;
 
 	std::string dev = " dev ";
@@ -503,8 +587,8 @@ void processMsrp(unsigned char *data) {
 	printf("mac_address : %02x:%02x:%02x:%02x:%02x:%02x\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 
 	std::string default_gw_mac_string = string_format("%02x:%02x:%02x:%02x:%02x:%02x", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
-// ip -6 neigh add <IPv6 address> lladdr <link-layer address> dev <device>
-	std::string str_neigh = "ip -6 neigh replace ";
+	// ip -6 neigh add <IPv6 address> lladdr <link-layer address> dev <device>
+	std::string str_neigh = "ip -6 neigh add ";
 	str_neigh = str_neigh + default_gw_string;
 
 	std::string str_lladdr = " lladdr ";
@@ -514,6 +598,7 @@ void processMsrp(unsigned char *data) {
 	str_neigh = str_neigh + interface_str;
 
 	system(str_neigh.c_str());
+
 }
 
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock,
@@ -645,9 +730,9 @@ void processNA(unsigned char* data) {
 	
 	printf("lladdr : %02x:%02x:%02x:%02x:%02x:%02x\n", lladdr[0], lladdr[1], lladdr[2], lladdr[3], lladdr[4], lladdr[5]);
 
-	/* Handover intra */
-	if(code == 1){
-		
+	/* Handover intra or inter */
+	if(code == 1 || code ==2 ){
+
 		ptr += 88;
 
 		for(int i = 0; i < 16; i++) {
@@ -699,10 +784,6 @@ void processNA(unsigned char* data) {
 
 	}
 
-	/*
-	if(code ==2 ){
-		//handover inter
-	}
-	*/
+
 	
 }
