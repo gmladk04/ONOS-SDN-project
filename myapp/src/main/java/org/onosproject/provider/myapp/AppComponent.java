@@ -40,6 +40,7 @@ import org.onlab.packet.UDP;
 
 import java.nio.ByteBuffer;
 import java.util.Calendar;
+import java.util.Date;
 import java.text.SimpleDateFormat;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -70,8 +71,13 @@ public class AppComponent{
         appId = coreService.registerApplication("org.example.sendWSA"); //do i need to synchronize this with app name?
 
         //how to repetitively call sendWSA
-        every3seconds();
 
+        /*every100mseconds sendWSA = new every100mseconds();
+        sendWSA.setDaemon(true);
+        sendWSA.start();
+        */
+
+       every3seconds();
         log.info("Sending WSA Started");
         log.info("started the apps sending WSA");
     }
@@ -82,8 +88,26 @@ public class AppComponent{
         log.info("Sending WSA Stopped");
     }
 
+    public class every100mseconds extends Thread{
+        final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss");
+        final ScheduledThreadPoolExecutor exec = new ScheduledThreadPoolExecutor(1);
+        public void run(){
+            for(;;){
+                try{
+                    Thread.sleep(100);
+                    Calendar cal = Calendar.getInstance();
+                    sendPacket();
+
+                    log.info(fmt.format(cal.getTime()));
+                }catch (Exception e) {
+                    e.printStackTrace();
+                    exec.shutdown();
+                }
+            }
+        }
+    }
     private void every3seconds() {
-        int sleepSec = 3;
+        int sleepSec = 1;
         final SimpleDateFormat fmt = new SimpleDateFormat("HH:mm:ss");
         final ScheduledThreadPoolExecutor exec = new ScheduledThreadPoolExecutor(1);
 
