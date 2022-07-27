@@ -124,6 +124,7 @@ int udp_sock;
 char* interface;
 double dist_max=0;
 
+bool abc = false;
 
 char target_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
 char src_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
@@ -132,7 +133,9 @@ char lladdr[6]={0x12, 0x12, 0x12,0x12, 0x12, 0x12};
 
 char target_addr2[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
 char target_addr3[16] = {0x12, 0x12, 0x12, 0x15, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
+
 //void processHandoverIntra(unsigned char *data);
+
 void processNA(unsigned char * data);
 
 void forge_udp_ns() {
@@ -471,7 +474,7 @@ int main(int argc, char* argv[]) {
 	processMsrp(buffer);
 	forge_udp_ns_intra();
 
-	sleep(2);
+	sleep(3);
 
 	interface = strdup(argv[1]);
 	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
@@ -694,6 +697,11 @@ void processNA(unsigned char* data) {
 	unsigned char primary_dns[16];
 	unsigned char mac_address[6];
 	unsigned char string_prefix[256];
+
+	if(abc == true)
+		return;
+	abc = true;
+
 	ptr = data;
 
 	ptr += 61;
@@ -733,6 +741,11 @@ void processNA(unsigned char* data) {
 	/* Handover intra or inter */
 	if(code == 1 ){
 
+		abc=false;
+		if(abc == true)
+			return;
+		abc = true;
+		
 		ptr += 88;
 
 		for(int i = 0; i < 16; i++) {
@@ -771,7 +784,7 @@ void processNA(unsigned char* data) {
 
 		std::string default_gw_mac_string = string_format("%02x:%02x:%02x:%02x:%02x:%02x", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 	// ip -6 neigh replace <IPv6 address> lladdr <link-layer address> dev <device>
-		std::string str_neigh = "ip -6 neigh replace ";
+		std::string str_neigh = "ip -6 neigh add ";
 		str_neigh = str_neigh + default_gw_string;
 
 		std::string str_lladdr = " lladdr ";
@@ -785,7 +798,10 @@ void processNA(unsigned char* data) {
 	}
 	
 	if(code ==2 ){
-
+		abc=false;
+		if(abc == true)
+			return;
+		abc = true;
 		ptr += 88;
 
 		for(int i = 0; i < 16; i++) {
@@ -797,7 +813,7 @@ void processNA(unsigned char* data) {
 
 		std::string default_gw_string = string_format("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], default_gw[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
 
-		std::string str = "ip -6 route add default via ";
+		std::string str = "ip -6 route replace default via ";
 		str = str + default_gw_string;
 
 		std::string dev = " dev ";
