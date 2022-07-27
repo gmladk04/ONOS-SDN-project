@@ -452,7 +452,7 @@ public class MyNdpProvider extends AbstractProvider {
                 .forDevice(deviceId)
                 .forTable(1)
                 .makePermanent();
-
+    /*
         if(isLBR) {
             log.info("modify LBR's");
             TrafficSelector.Builder selector = DefaultTrafficSelector.builder();
@@ -486,7 +486,7 @@ public class MyNdpProvider extends AbstractProvider {
             flowRuleService.applyFlowRules(flowRule.build()); log.info("remove rule - done - Rsu");
             rsuFlowDB.remove(1, flowRule.build()); log.info("remove entry to DB - done -Rsu");
 
-        }
+        }*/
     }
     private void sendSuccessNa(byte[] target_addr, MacAddress vehicle_mac) {
         log.info("send success NA");
@@ -503,9 +503,15 @@ public class MyNdpProvider extends AbstractProvider {
 
         //udp contents
         udpPacket.setPayload(naPacket);
-
+        udpPacket.setDestinationPort(1234);
+        udpPacket.setSourcePort(1234);
         //ip contents
+        byte[] sourceaddr = new byte[] {(byte) 0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
         ipPacket.setPayload(udpPacket);
+        ipPacket.setDestinationAddress(sourceaddr);
+        ipPacket.setSourceAddress(sourceaddr);
+        ipPacket.setNextHeader((byte)17);
+        ipPacket.setHopLimit((byte)64);
 
         //ethernet contents
         ethPacket.setEtherType((short) 0x86dd);
@@ -531,9 +537,15 @@ public class MyNdpProvider extends AbstractProvider {
 
         //udp contents
         udpPacket.setPayload(naPacket);
-
+        udpPacket.setDestinationPort(1234);
+        udpPacket.setSourcePort(1234);
         //ip contents
+        byte[] sourceaddr = new byte[] {(byte) 0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
         ipPacket.setPayload(udpPacket);
+        ipPacket.setDestinationAddress(sourceaddr);
+        ipPacket.setSourceAddress(sourceaddr);
+        ipPacket.setNextHeader((byte)17);
+        ipPacket.setHopLimit((byte)64);
 
         //ethernet contents
         ethPacket.setEtherType((short) 0x86dd);
@@ -559,9 +571,15 @@ public class MyNdpProvider extends AbstractProvider {
 
         //udp contents
         udpPacket.setPayload(naPacket);
-
+        udpPacket.setDestinationPort(1234);
+        udpPacket.setSourcePort(1234);
         //ip contents
+        byte[] sourceaddr = new byte[] {(byte) 0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
         ipPacket.setPayload(udpPacket);
+        ipPacket.setDestinationAddress(sourceaddr);
+        ipPacket.setSourceAddress(sourceaddr);
+        ipPacket.setNextHeader((byte)17);
+        ipPacket.setHopLimit((byte)64);
 
         //ethernet contents
         ethPacket.setEtherType((short) 0x86dd);
