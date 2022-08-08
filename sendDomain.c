@@ -127,12 +127,11 @@ double dist_max=0;
 bool abc = false;
 
 char target_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
-char src_addr[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
-char dst_addr[16]={ 0x12, 0x34, 0x12, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
+char src_addr[16] = {0x12, 0x34, 0x12, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
+char dst_addr[16]={ 0x12, 0x18, 0x12, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
 char lladdr[6]={0x12, 0x12, 0x12,0x12, 0x12, 0x12};
-
-char target_addr2[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
-char target_addr3[16] = {0x12, 0x12, 0x12, 0x15, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
+char src_addr2[16] = {0x12, 0x12, 0x34, 0x34, 0x12, 0x34, 0x0, 0x0, 0x1,0x1,0x1,0x1,0x1,0x1,0x1,0x1};
+char target_addr2[16] = {0x34, 0x15, 0x34, 0x34, 0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34,0x12, 0x12, 0x34, 0x34};
 
 //void processHandoverIntra(unsigned char *data);
 
@@ -141,7 +140,9 @@ void processNA(unsigned char * data);
 void forge_udp_ns() {
 	char buf[1500];
 	char * buf_ptr;
+	char buf_na[1500];
 	unsigned int data_len = 0;
+	unsigned int received=0;
 
 	struct udp_ns_header unh;
 	struct udp_header uh;
@@ -202,15 +203,16 @@ void forge_udp_ns() {
 	for(int i = 0; i < 6; i++) {
 			printf("%x\n", addr[i]);
 	}
-
-	processNA((unsigned char *)buf_ptr);
+	received = recv(udp_sock, buf_na, 1500, 0);
+	processNA((unsigned char *)buf_na);
 }
 
 void forge_udp_ns_intra() { //code == 1
 	char buf[1500];
 	char * buf_ptr;
+	char buf_na[1500];
 	unsigned int data_len = 0;
-
+	unsigned int received=0;	
 	struct udp_ns_header unh;
 	struct udp_header uh;
 	struct ipv6_header ih;
@@ -225,7 +227,7 @@ void forge_udp_ns_intra() { //code == 1
 	unh.code =1; //handover intra
 	unh.checksum=htons(0);
 	unh.reserved=htons(0);
-	memcpy(unh.target_address, target_addr2 ,16);
+	memcpy(unh.target_address, target_addr ,16);
 	unh.op_type=1;
 	unh.op_length=1;
 	memcpy(unh.lladdr, lladdr,6);
@@ -270,15 +272,17 @@ void forge_udp_ns_intra() { //code == 1
 	for(int i = 0; i < 6; i++) {
 			printf("%x\n", addr[i]);
 	}
-
-	processNA((unsigned char *)buf_ptr);
+	
+	received = recv(udp_sock, buf_na, 1500, 0);
+	processNA((unsigned char *)buf_na);
 }
 
 void forge_udp_ns_inter() { //code == 2
 	char buf[1500];
 	char * buf_ptr;
+	char buf_na[1500];
 	unsigned int data_len = 0;
-
+	unsigned int received=0;
 	struct udp_ns_header unh;
 	struct udp_header uh;
 	struct ipv6_header ih;
@@ -293,7 +297,7 @@ void forge_udp_ns_inter() { //code == 2
 	unh.code =2; //handover inter
 	unh.checksum=htons(0);
 	unh.reserved=htons(0);
-	memcpy(unh.target_address, target_addr3 ,16);
+	memcpy(unh.target_address, target_addr2 ,16);
 	unh.op_type=1;
 	unh.op_length=1;
 	memcpy(unh.lladdr, lladdr,6);
@@ -313,7 +317,7 @@ void forge_udp_ns_inter() { //code == 2
 	ih.payload_length=htons(40);
 	ih.hop_limit=64;
 	ih.nh=17;
-	memcpy(ih.sourceaddr, src_addr ,16);
+	memcpy(ih.sourceaddr, src_addr2 ,16);
 	memcpy(ih.destaddr, dst_addr,16);
 
 	
@@ -339,7 +343,8 @@ void forge_udp_ns_inter() { //code == 2
 			printf("%x\n", addr[i]);
 	}
 
-	processNA((unsigned char *)buf_ptr);
+	received = recv(udp_sock, buf_na, 1500, 0);
+	processNA((unsigned char *)buf_na);
 }
 
 int mrpd_init_protocol_socket(u_int16_t etype, int* sock, unsigned char* multicast_addr);
@@ -451,59 +456,78 @@ int main(int argc, char* argv[]) {
 	unsigned short vlan_id;
 	//unsigned char test[] = {0x03,0x00,0x80,0x07,0x7c,0x03,0x00,0x79,0x3f,0x11,0x03,0x11,0x01,0x64,0x06,0x18,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x07,0x05,0x04,0x4a,0x4d,0x43,0x52,0x01,0xef,0xff,0xff,0xfe,0x08,0x01,0x0b,0xac,0x9e,0x0c,0x01,0x02,0x0c,0x04,0x06,0xa4,0x00,0x00,0x15,0x01,0x02,0x07,0x08,0x12,0x34,0x0d,0xb8,0xf0,0x0d,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x40,0xfe,0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x02,0x00,0x00,0xff,0xfe,0x00,0x00,0x08,0x10,0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x08,0x08,0x00,0x00,0x01,0x00,0x01,0x01,0x0e,0x06,0x00,0x00,0x00,0x00,0x00,0x08};
 
+	std::string init = "ip -6 addr add 1234:1234:1234::101:101:101:101 dev sta1-wlan0 ";
+	system(init.c_str());
+
 	interface = strdup(argv[1]);
 
 	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
 	mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
-
+	
 	received = recv(msrp_sock, buffer, 1500, 0);
 	
 	processMsrp(buffer);
 	forge_udp_ns();
+	abc=false;
 	close(msrp_sock);
 	close(udp_sock);
 	
-	sleep(2);
+	pid_t pid;
 
-	interface = strdup(argv[1]);
-	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
-	mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
+	if((pid=fork()) < 0) {
+		//
+	}
 
-	received = recv(msrp_sock, buffer, 1500, 0);
+	if(pid == 0) {
+		//sleep(1);
+		//system("iperf3 -c 1218:1234:1234::101:101:101:101 -b100K -i1 -t 90 -u -6 -B 1234:1234:1234::101:101:101:101 -l 1K");
+		//while(true);
+	} else {
+		sleep(17);
+
+		interface = strdup(argv[1]);
+		mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
+		mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
+
+		received = recv(msrp_sock, buffer, 1500, 0);
 	
-	processMsrp(buffer);
-	forge_udp_ns_intra();
+		processMsrp(buffer);
+		forge_udp_ns_intra();
+		abc=false;
+		sleep(17);
 
-	sleep(3);
+		interface = strdup(argv[1]);
+		mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
+		mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
 
-	interface = strdup(argv[1]);
-	mrpd_init_protocol_socket(0x88DC, &msrp_sock, MSRP_ADDR);
-	mrpd_init_protocol_socket(0x86DD, &udp_sock, MSRP_ADDR);
-
-	received = recv(msrp_sock, buffer, 1500, 0);
+		received = recv(msrp_sock, buffer, 1500, 0);
 	
-	processMsrp(buffer);
-	forge_udp_ns_inter();
+		processMsrp(buffer);
+		forge_udp_ns_inter();
+		abc=false;
+	
+		close(msrp_sock);
+		close(udp_sock);
+	}
 
-	close(msrp_sock);
-	close(udp_sock);
 
 	
 	return 0;
 }
+unsigned char default_gw[16];
+unsigned char primary_dns[16];
+
+unsigned char string_prefix[256];
 
 void processMsrp(unsigned char *data) {
 	unsigned char* ptr;
 	unsigned char channel_number;
 	unsigned char ipv6_prefix[16];
 	unsigned char prefix_length;
-	unsigned char default_gw[16];
-	unsigned char primary_dns[16];
 	unsigned char mac_address[6];
-	unsigned char string_prefix[256];
 
 	/*3D location*/
-	unsigned char* ptr2;
+	/*unsigned char* ptr2;
 	double dist=0;
 	double x;
 	double y;
@@ -524,7 +548,7 @@ void processMsrp(unsigned char *data) {
 
 	printf("3D location: %lf  %lf  %lf\n\n", x, y, z);
 
-
+*/
 	ptr = data;
 
 	ptr += 53;
@@ -534,8 +558,8 @@ void processMsrp(unsigned char *data) {
 	ptr++;
 
 	channel_number = *ptr;
+	
 	ptr++;
-
 	printf("Channel Number : %d\n", channel_number);
 
 	ptr += 16;
@@ -690,17 +714,8 @@ void processNA(unsigned char* data) {
 	unsigned char target_address[16];
 	unsigned char op_type;
 	unsigned char op_length;
-	unsigned char lladdr[6];
-
-	unsigned char* ptr2;
-	unsigned char default_gw[16];
-	unsigned char primary_dns[16];
 	unsigned char mac_address[6];
-	unsigned char string_prefix[256];
 
-	if(abc == true)
-		return;
-	abc = true;
 
 	ptr = data;
 
@@ -720,6 +735,8 @@ void processNA(unsigned char* data) {
 
     ptr += 6;//checksum & reserved
 
+	if(abc==true) return;
+	abc=true;
 
 	for(int i = 0; i < 16; i++) {
 		target_address[i] = *ptr;
@@ -728,33 +745,21 @@ void processNA(unsigned char* data) {
 
 	printf("Target Address : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", target_address[0], target_address[1], target_address[2], target_address[3], target_address[4], target_address[5], target_address[6], target_address[7], target_address[8], target_address[9], target_address[10], target_address[11], target_address[12], target_address[13], target_address[14], target_address[15]);
 
-	ptr += 2;
+	ptr += 2; //type length
 
 	
 	for(int i = 0; i < 6; i++) {
-		lladdr[i] = *ptr;
+		mac_address[i] = *ptr;
 		ptr++;
 	}//lladdr
 	
-	printf("lladdr : %02x:%02x:%02x:%02x:%02x:%02x\n", lladdr[0], lladdr[1], lladdr[2], lladdr[3], lladdr[4], lladdr[5]);
+	printf("%02x:%02x:%02x:%02x:%02x:%02x\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 
 	/* Handover intra or inter */
 	if(code == 1 ){
 
-		abc=false;
-		if(abc == true)
-			return;
-		abc = true;
-		
-		ptr += 88;
-
-		for(int i = 0; i < 16; i++) {
-		default_gw[i] = *ptr;
-		ptr++;
-		}//default gateway
 	
-		printf("Default gateway : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], default_gw[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
-
+	
 		std::string default_gw_string = string_format("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], default_gw[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
 
 		std::string str = "ip -6 route replace default via ";
@@ -767,20 +772,6 @@ void processNA(unsigned char* data) {
 	
 		system(str.c_str());	
 
-		for(int i = 0; i < 16; i++) { 
-		primary_dns[i] = *ptr;
-		ptr++;
-		}//dns
-		printf("primary_dns : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", primary_dns[0], primary_dns[1], primary_dns[2], primary_dns[3], primary_dns[4], primary_dns[5], primary_dns[6], primary_dns[7], primary_dns[8], primary_dns[9], primary_dns[10], primary_dns[11], primary_dns[12], primary_dns[13], primary_dns[14], primary_dns[15]);
-
-		ptr += 3;
-	
-	
-		for(int i = 0; i < 6; i++) {
-		mac_address[i] = *ptr;
-		ptr++;
-		}//mac_address
-		printf("mac_address : %02x:%02x:%02x:%02x:%02x:%02x\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 
 		std::string default_gw_mac_string = string_format("%02x:%02x:%02x:%02x:%02x:%02x", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 	// ip -6 neigh replace <IPv6 address> lladdr <link-layer address> dev <device>
@@ -798,19 +789,8 @@ void processNA(unsigned char* data) {
 	}
 	
 	if(code ==2 ){
-		abc=false;
-		if(abc == true)
-			return;
-		abc = true;
-		ptr += 88;
-
-		for(int i = 0; i < 16; i++) {
-		default_gw[i] = *ptr;
-		ptr++;
-		}//default gateway
 	
-		printf("Default gateway : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], default_gw[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
-
+		
 		std::string default_gw_string = string_format("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x", default_gw[0], default_gw[1], default_gw[2], default_gw[3], default_gw[4], default_gw[5], default_gw[6], default_gw[7], default_gw[8], default_gw[9], default_gw[10], default_gw[11], default_gw[12], default_gw[13], default_gw[14], default_gw[15]);
 
 		std::string str = "ip -6 route replace default via ";
@@ -823,19 +803,7 @@ void processNA(unsigned char* data) {
 	
 		system(str.c_str());	
 
-		for(int i = 0; i < 16; i++) { 
-		primary_dns[i] = *ptr;
-		ptr++;
-		}//dns
-		printf("primary_dns : %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n", primary_dns[0], primary_dns[1], primary_dns[2], primary_dns[3], primary_dns[4], primary_dns[5], primary_dns[6], primary_dns[7], primary_dns[8], primary_dns[9], primary_dns[10], primary_dns[11], primary_dns[12], primary_dns[13], primary_dns[14], primary_dns[15]);
-
-		ptr += 3;
-	
-	
-		for(int i = 0; i < 6; i++) {
-		mac_address[i] = *ptr;
-		ptr++;
-		}//mac_address
+		
 		printf("mac_address : %02x:%02x:%02x:%02x:%02x:%02x\n", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
 
 		std::string default_gw_mac_string = string_format("%02x:%02x:%02x:%02x:%02x:%02x", mac_address[0], mac_address[1], mac_address[2], mac_address[3], mac_address[4], mac_address[5]);
